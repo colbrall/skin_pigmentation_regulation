@@ -1,2 +1,9 @@
 @author Laura Colbran
 scripts, data, results for skin pigmentation/gene regulation project
+
+bin/
+  training and analysis scripts
+
+data/
+
+results/

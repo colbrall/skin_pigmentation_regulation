@@ -9,7 +9,7 @@ using DataFrames
 using DBInterface
 
 # parses command-line arguments
-function parse_commandline()
+function parseCommandLine()
 	s = ArgParseSettings()
 	@add_arg_table! s begin
 		"--databases", "-d"
@@ -46,7 +46,7 @@ function dbSearch(dbs::Array{String,1},gene_file::String,col::Int64)
 end
 
 function main()
-	parsed_args = parse_commandline()
+	parsed_args = parseCommandLine()
 	dbSearch(parsed_args["databases"],parsed_args["genes"],parsed_args["column"])
 end
 
