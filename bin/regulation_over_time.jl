@@ -12,7 +12,7 @@ using Plots
 function parseCommandline()
 	s = ArgParseSettings()
 	# @add_arg_table! s begin
-	@add_arg_table s begin
+	@add_arg_table! s begin
 		"--regulation", "-r"
 			nargs='*'
 			help="path(s) to predicted regulation files"
