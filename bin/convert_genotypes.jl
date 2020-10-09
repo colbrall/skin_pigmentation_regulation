@@ -8,6 +8,8 @@
 
 using ArgParse
 using GZip
+using MultivariateStats
+using Plots,CSV,DataFrames
 
 TRANS_PATH = "/project/mathilab/colbranl/bin/transposeFile.awk"
 STRAND_PATH = "/project/mathilab/colbranl/pigmentation/bin/update_build.sh"
@@ -21,19 +23,22 @@ function parseCommandline()
 		"--array_map", "-a"
 			help="path(s) to text file with A/B to TOP allele matching by rsID"
 			arg_type = String
-			required = true
 		"--genotypes","-g"
 			help = "1-indexed column containing gene IDs to search for"
 			arg_type=String
-			required = true
 		"--strand_ref","-s"
 			help = "path to strand file for update_build.sh to use"
 			arg_type=String
-			required = true
 		"--out_name", "-o"
             help = "path and prefix to write output files to"
             arg_type = String
             default = "./out"
+		"--pop_path","-p"
+			help="path to file with sample->pop mapping for the PCA."
+			arg_type=String
+		"--eigen_vecs","-e"
+			help="output from simplepca to plot"
+			arg_type=String
 	end
 	return parse_args(s)
 end
@@ -129,19 +134,24 @@ function strandFlip(strand_ref::String,out_path::String)
 	run(`plink --file tmp --make-bed --out tmp`)
 	# use update_build to flip strands to match hg19
 	run(`$(STRAND_PATH) tmp $(strand_ref) $(out_path)`)
-	run(`rm tmp.*`)
+	run(`rm tmp."*"`)
 end
 
-# makes PCA plots (and other QC things?)
-function qc(out_path::String)
-	println("not implemented yet")
+# makes PCA plots (and other QC things?) using only autosomes
+function qc(eigen_path::String)
+	eigen_vecs = CSV.read(eigen_path;delim='\t')
+	deletecols!(eigen_vecs,:Column1)
+	col_names = ["id","pc1","pc2","pc3","pc4","pc5","pc6","pc7","pc8","pc9","pc10","pop"]
+	rename!(eigen_vecs,Symbol.(col_names))
+	p = Plots.scatter(eigen_vecs[:pc1],eigen_vecs[:pc2],xlabel="PC1",ylabel="PC2",group=eigen_vecs[:pop],margin=10Plots.mm,legend=:best)
+	Plots.savefig(p,"pc1_pc2.pdf")
 end
 
 function main()
     parsed_args = parseCommandline()
     # abToTOP(parsed_args["array_map"],parsed_args["genotypes"])
 	# strandFlip(parsed_args["strand_ref"],parsed_args["out_name"])
-	qc(parsed_args["out_name"])
+	qc(parsed_args["eigen_vecs"])
 end
 
 main()
