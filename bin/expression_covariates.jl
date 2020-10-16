@@ -3,10 +3,12 @@
 #
 # converts zhang expression text file into correct format, and calculates PEER covariates.
 # julia 1.4
-# dependencies:
+# dependencies: R >3.3 with PEER installed
 
 using ArgParse
 using GZip
+using RCall
+using DataFrames, CSV
 
 NUM_SAMPLES = 10
 RSEM_THRESH = 0.5
@@ -24,7 +26,7 @@ function parseCommandline()
 			help="path(s) to pca eigenvectors"
 			arg_type = String
 		"--out_name", "-o"
-            help = "path and prefix to write output files to"
+            help = "path and prefix to write output files to. (or prefix for matrix to normalize)"
             arg_type = String
             default = "./out"
 	end
@@ -42,16 +44,16 @@ function expMatrix(expr_path::String,out_path::String)
             if startswith(line,"Sample") continue end
             l = split(chomp(line),"\t")
             push!(ind_ids,l[1])
-            if haskey(fpkm,l[5])
-                push!(fpkm[l[5]],parse(Float64,l[8]))
-                push!(rsem[l[5]],parse(Float64,l[9]))
-                push!(counts[l[5]],parse(Float64,l[6]))
+            if haskey(fpkm,l[4])
+                push!(fpkm[l[4]],parse(Float64,l[8]))
+                push!(rsem[l[4]],parse(Float64,l[9]))
+                push!(counts[l[4]],parse(Float64,l[6]))
             else
-                fpkm[l[5]] = [parse(Float64,l[8])]
-                rsem[l[5]] = [parse(Float64,l[9])]
-                counts[l[5]] = [parse(Float64,l[6])]
+                fpkm[l[4]] = [parse(Float64,l[8])]
+                rsem[l[4]] = [parse(Float64,l[9])]
+                counts[l[4]] = [parse(Float64,l[6])]
             end
-        end
+		end
     end
     open("$out_path.txt","w") do f
         write(f,"#gene_id\t$(join(ind_ids,'\t'))\n")
@@ -61,22 +63,93 @@ function expMatrix(expr_path::String,out_path::String)
             write(f,"$(gene)\t$(join(fpkm[gene],'\t'))\n")
         end
     end
-    run(`gzip "$out_path.txt"`)
+    run(`gzip -f "$out_path.txt"`)
 end
 
-# wrapper function to calculate peer factors
-function peerFactors()
+# normalizes expression in prep for PEER values and PrediXcan
+function normExpr(matrix_path::String)
+	expr =  CSV.read(GZip.open("$(matrix_path).txt.gz");delim='\t')
+	gene_ids = expr[Symbol("#gene_id")]
+	deletecols!(expr,Symbol("#gene_id"))
+	@rput expr
+	@rput gene_ids
+	@rput matrix_path
+	R"""
+		# borrowed code from here: https://davetang.org/muse/2014/07/07/quantile-normalisation-in-r/
+		# tweaked tie handling to "average" to match bioconductor
+		quantileNormalisation <- function(df){
+		    df_rank <- apply(df,2,rank,ties.method="average")
+		    df_sorted <- data.frame(apply(df, 2, sort))
+		    df_mean <- apply(df_sorted, 1, mean)
+
+		    index_to_mean <- function(my_index, my_mean){
+		    return(my_mean[my_index])
+		    }
+
+		    df_final <- apply(df_rank, 2, index_to_mean, my_mean=df_mean)
+		    rownames(df_final) <- rownames(df)
+		    return(df_final)
+		}
+		# normalize across samples
+		expr <- quantileNormalisation(expr)
+
+	    # "For each gene, expression values were inverse quantile normalized to a standard normal distribution across samples."
+	    # command from eric's link (pg18): https://media.nature.com/original/nature-assets/nature/journal/v490/n7419/extref/nature11401-s1.pdf
+	    expr <- t(expr)
+		# normalize each gene
+	    for (i in 1:ncol(expr)) {
+	        norm_dist <- qnorm((rank(expr[,i],na.last="keep")-0.5)/sum(!is.na(expr[,i])))
+	        expr[,i] <- norm_dist
+	    }
+		expr = t(expr)
+		num_col = ncol(expr)
+		expr = cbind(expr,gene_ids)
+		expr = expr[,c(ncol(expr),1:num_col)]
+		write.table(expr,paste(matrix_path,"_norm.txt",sep=""),quote=FALSE,row.names = FALSE,sep='\t')
+	"""
+	run(`gzip -f $(matrix_path)_norm.txt`)
 end
 
-#combines PCA and PEER factor output into a covariate class for predixcan processing
-function combineFiles()
+# wrapper function to calculate peer factors and get residuals
+function peerFactors(matrix_path::String,pca_path::String)
+	expr =  CSV.read(GZip.open("$(matrix_path)_norm.txt.gz");delim='\t')
+	gene_ids = expr[:gene_ids]
+	deletecols!(expr,:gene_ids)
+
+
+	covs = CSV.read(pca_path;delim='\t')
+	deletecols!(covs,:Column1)
+	col_names = ["id","pc1","pc2","pc3","pc4","pc5","pc6","pc7","pc8","pc9","pc10","pop"]
+	rename!(covs,Symbol.(col_names))
+	for i in 1:nrow(covs)
+		covs[i,:id] = split(covs[i,:id],":")[2]
+	end
+	# sort covs to match expr
+	covs = covs[[:pc1,:pc2,:pc3,:pc4,:pc5]] #match GTEx predixcan run
+
+	@rput expr
+	@rput covs
+	@rput gene_ids
+	@rput matrix_path
+	R"""
+	suppressPackageStartupMessages(library(peer))
+	model = PEER()
+	PEER_setPhenoMean(model,as.matrix(t(expr)))
+	PEER_setNk(model,60) #match GTEx predixcan run
+	PEER_update(model)
+	PEER_setCovariates(model, as.matrix(covs))
+	residuals = PEER_getResiduals(model)
+	residuals = cbind(gene_ids,residuals)
+	write.table(residuals,paste(matrix_path,"_residuals.txt",sep=""),quote=FALSE,row.names = TRUE,sep='\t')
+	"""
+	run(`gzip -f $(matrix_path)_residuals.txt`)
 end
 
 function main()
     parsed_args = parseCommandline()
-    expMatrix(parsed_args["expression"],parsed_args["out_name"])
-    peerFactors(parsed_args["out_name"])
-    combineFiles()
+    # expMatrix(parsed_args["expression"],parsed_args["out_name"])
+    # normExpr(parsed_args["out_name"])
+    peerFactors(parsed_args["out_name"],parsed_args["pca"])
 end
 
 main()
