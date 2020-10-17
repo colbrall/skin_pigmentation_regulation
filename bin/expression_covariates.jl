@@ -115,7 +115,7 @@ function peerFactors(matrix_path::String,pca_path::String)
 	expr =  CSV.read(GZip.open("$(matrix_path)_norm.txt.gz");delim='\t')
 	gene_ids = expr[:gene_ids]
 	deletecols!(expr,:gene_ids)
-
+	ind_ids = names(expr)
 
 	covs = CSV.read(pca_path;delim='\t')
 	deletecols!(covs,:Column1)
@@ -125,21 +125,25 @@ function peerFactors(matrix_path::String,pca_path::String)
 		covs[i,:id] = split(covs[i,:id],":")[2]
 	end
 	# sort covs to match expr
-	covs = covs[[:pc1,:pc2,:pc3,:pc4,:pc5]] #match GTEx predixcan run
+	covs = covs[[:pc1,:pc2,:pc3]] #match Zhang predixcan run
 
 	@rput expr
 	@rput covs
 	@rput gene_ids
 	@rput matrix_path
+	@rput ind_ids
 	R"""
 	suppressPackageStartupMessages(library(peer))
 	model = PEER()
 	PEER_setPhenoMean(model,as.matrix(t(expr)))
-	PEER_setNk(model,60) #match GTEx predixcan run
+	PEER_setNk(model,15) #match Zhang eQTL
 	PEER_update(model)
 	PEER_setCovariates(model, as.matrix(covs))
 	residuals = PEER_getResiduals(model)
-	residuals = cbind(gene_ids,residuals)
+
+	rownames(residuals) <- ind_ids
+	residuals = t(residuals)
+	rownames(residuals) <- gene_ids
 	write.table(residuals,paste(matrix_path,"_residuals.txt",sep=""),quote=FALSE,row.names = TRUE,sep='\t')
 	"""
 	run(`gzip -f $(matrix_path)_residuals.txt`)
