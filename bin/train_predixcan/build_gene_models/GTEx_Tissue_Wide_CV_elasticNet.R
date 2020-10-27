@@ -1,4 +1,4 @@
-# the messy one with all the output and print statements. For messing about with.
+##
 suppressMessages(library(glmnet))
 suppressMessages(library(methods))
 "%&%" <- function(a,b) paste(a, b, sep = "")

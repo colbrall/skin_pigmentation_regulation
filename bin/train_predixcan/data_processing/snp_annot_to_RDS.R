@@ -15,7 +15,7 @@ for (i in 1:22) {
   outfile <- file_head %&% i %&% ".RDS"
   snp_annot <- read.table(infile, stringsAsFactors = FALSE, header = TRUE)
   snp_annot <- unique(snp_annot)
-  rownames(snp_annot) <- snp_annot$varID
+  rownames(snp_annot) <- snp_annot$rsid
   saveRDS(snp_annot, outfile)
   print(i %&% "/22")
 }

@@ -17,10 +17,15 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
   gene_annot <- readRDS(gene_annot_RDS)
   gene_annot <- subset(gene_annot, gene_annot$chr == chrom)
   snp_annot <- readRDS(snp_annot_RDS)
+  print("snp_annot:")
+  print(head(snp_annot))
 
   rownames(gene_annot) <- gene_annot$gene_id
   # Subset expression data to only include genes with gene_info
   expression <- expression[, intersect(colnames(expression), rownames(gene_annot))]
+  # subset expression to only those samples with genotypes
+  expression <- expression[rownames(expression) %in% rownames(genotype),]
+
   interout <- tis %&% "_genesinter_" %&% chrom %&% ".txt"
   # for (i in 1:ncol(expression)) {
   #   gene = colnames(expression)[i]
@@ -36,6 +41,8 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
   write.table(log_df, file = out_dir %&% tis %&% '_chr' %&% chrom %&% '_elasticNet_model_log.txt', quote = FALSE, row.names = FALSE, sep = "\t")
   set.seed(seed)
   groupid <- sample(1:n_k_folds, length(exp_samples), replace = TRUE)
+  print(groupid)
+  print(length(groupid))
 
   resultsarray <- array(0, c(length(exp_genes), 9))
   dimnames(resultsarray)[[1]] <- exp_genes
@@ -60,22 +67,25 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
     end <- geneinfo$end + window
     # Pull cis-SNP info
     cissnps <- subset(snp_annot, snp_annot$pos >= start & snp_annot$pos <= end)
+    print(head(cissnps))
+
     # Pull cis-SNP genotypes
-    cisgenos <- data.frame(genotype[,intersect(colnames(genotype), cissnps$varID), drop = FALSE])
+    # cisgenos <- data.frame(genotype[,intersect(colnames(genotype), cissnps$varID), drop = FALSE]) #join by varID
+    cisgenos <- data.frame(genotype[,intersect(colnames(genotype), cissnps$rsid), drop = FALSE]) #join by rsID
+      # print(nrow(cisgenos))
+      # print(ncol(cisgenos))
     # Reduce cisgenos to only include SNPs with at least 1 minor allele in dataset
     cm <- colMeans(cisgenos, na.rm = TRUE)
     minorsnps <- subset(colMeans(cisgenos), cm > 0 & cm < 2)
     minorsnps <- names(minorsnps)
     cisgenos <- data.frame(cisgenos[,minorsnps, drop = FALSE])
+      # print(typeof(cisgenos))
     missingout <- tis %&% "_genesmissing_" %&% chrom %&% ".txt"
     if (ncol(cisgenos) < 2) { #only do this if there are _no_ SNPs nearby.
       # Need 2 or more cis-snps for glmnet.
       write(gene,file=missingout,append=TRUE) # 264 here
       bestbetas <- data.frame()
     } else {
-      # print(nrow(cisgenos))
-      # print(ncol(cisgenos))
-      # print(typeof(cisgenos))
       # Pull expression data for gene
       exppheno <- expression[,gene]
       # Scale for fastLmPure to work properly
@@ -89,10 +99,11 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
       # print(nrow(cisgenos))
       # print(ncol(cisgenos))
       # print(typeof(cisgenos))
-      #print("before (genes/snps)")
+      # print("before (genes/snps)")
       # print(nrow(exppheno))
       # print(ncol(exppheno))
       # print(typeof(exppheno))
+
       #-----debug-----
       #reduce exppheno to only include individuals we have geno data
       # print(head(exppheno[,1]))
@@ -100,9 +111,10 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
       #match the sampleid
       cisgenos<-cisgenos[sapply(rownames(exppheno), function(x) which(x==rownames(cisgenos))),]
       #-----debug-----
-      #print("after (genes/snps)")
-      #print(nrow(exppheno))
-      #print(nrow(cisgenos))
+      print("after (genes/snps)")
+      print(nrow(exppheno))
+      # print(sapply(cisgenos,typeof))
+      print(nrow(cisgenos))
 
       # Run Cross-Validation
       # parallel = TRUE is slower on tarbell
@@ -111,6 +123,11 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
         {
         #set seed-debug
         set.seed(as.numeric(sub('^....','',gene)))
+        print(ncol(cisgenos))
+        print(dim(cisgenos))
+        print(dim(exppheno))
+        print(dim(as.matrix(cisgenos)))
+        print(groupid)
         fit <- cv.glmnet(as.matrix(cisgenos),
                            as.vector(exppheno),
                            nfolds = n_k_folds,
@@ -128,6 +145,8 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
         nrow.best <- best.lam[,3]
         # Get the betas from the best lambda value
         ret <- as.data.frame(fit$glmnet.fit$beta[,nrow.best])
+        print("ret")
+        print(head(ret))
         for (row in 1:length(ret[ret == 0.0])) {write(gene,file=expgenesout,append=TRUE)}
         ret[ret == 0.0] <- NA
         # Pull the non-zero betas from model
@@ -141,8 +160,8 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
         }
       )
     }
+    print(bestbetas)
     if (length(bestbetas) > 0) {
-      print(head(bestbetas))
       names(bestbetas) <- rownames(ret)[which(!is.na(ret))]
       # Pull out the predictions at the best lambda value.
       pred.mat <- fit$fit.preval[,nrow.best]
@@ -153,8 +172,12 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
       resultsarray[gene,] <- c(gene, alpha, cvm.best, nrow.best, lambda.best, length(bestbetas), rsq, pval, genename)
       # Output best shrunken betas for PrediXcan
       bestbetalist <- names(bestbetas)
+      print("bestbetalist:")
+      print(bestbetalist)
+      print(head(snp_annot))
       bestbetainfo <- snp_annot[bestbetalist,]
       betatable <- as.matrix(cbind(bestbetainfo,bestbetas))
+      print(betatable)
       write_covariance(gene, cisgenos, betatable[,"rsid"], betatable[,"varID"], covariance_out)
       # Output "gene", "rsid", "refAllele", "effectAllele", "beta"
       # For future: To change rsid to the chr_pos_ref_alt_build label, change "rsid" below to "varID".
@@ -173,7 +196,11 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
 }
 
 write_covariance <- function(gene, cisgenos, model_rsids, model_varIDs, covariance_out) {
-  model_geno <- cisgenos[,model_varIDs, drop=FALSE]
+  print(model_varIDs)
+  print("rsids")
+  print(model_rsids)
+  # model_geno <- cisgenos[,model_varIDs, drop=FALSE]
+  model_geno <- cisgenos[,model_rsids, drop=FALSE]
   geno_cov <- cov(model_geno)
   cov_df <- data.frame(gene=character(),rsid1=character(),rsid2=character(), covariance=double())
   for (i in 1:length(model_rsids)) {
