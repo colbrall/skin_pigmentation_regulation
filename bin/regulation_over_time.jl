@@ -47,7 +47,7 @@ function parseCommandline()
 end
 
 function sampDF(s_path::String,col::Int64,cov_cols::Array{Int64,1})
-    df = CSV.read(s_path; delim='\t',allowmissing=:none)
+    df = CSV.read(s_path, DataFrame; delim='\t')
 	if length(cov_cols) > 0
 		return df[:,[1,col,cov_cols]]
 	else
@@ -96,7 +96,7 @@ function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64
 					println("covariate regression not implemented yet")
 					exit()
 				else
-					fm = @eval @formula($(Symbol("$(l[1])_$t_name")) ~ $(date_name))
+					fm = @eval @formula($(Symbol("$(l[1])_$t_name")) ~ $(Symbol("$date_name")))
 					model = lm(fm,var)#fit regression
 					println(model)
 				end
