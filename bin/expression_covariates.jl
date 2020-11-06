@@ -56,12 +56,20 @@ function expMatrix(expr_path::String,out_path::String)
 		end
     end
     open("$out_path.txt","w") do f
-        write(f,"#gene_id\t$(join(ind_ids,'\t'))\n")
-        for gene in keys(fpkm)
-            if length(findall(i -> i > RSEM_THRESH,rsem[gene])) < NUM_SAMPLES continue end
-            if length(findall(i -> i >= READ_THRESH,counts[gene])) < NUM_SAMPLES continue end
-            write(f,"$(gene)\t$(join(fpkm[gene],'\t'))\n")
-        end
+	    open("$(out_path)_rejects.txt","w") do g
+	        write(f,"#gene_id\t$(join(ind_ids,'\t'))\n")
+			write(g,"#gene_id\trsem\tread_count\twhy\n")
+	        for gene in keys(fpkm)
+	            if length(findall(i -> i > RSEM_THRESH,rsem[gene])) < NUM_SAMPLES
+					write(g,"$(split(gene,'.')[1])\t$(length(findall(i -> i > RSEM_THRESH,rsem[gene])))\t$(length(findall(i -> i >= READ_THRESH,counts[gene])))\tRSEM\n")
+					continue
+				end
+	            if length(findall(i -> i >= READ_THRESH,counts[gene])) < NUM_SAMPLES
+					write(g,"$(split(gene,'.')[1])\t$(length(findall(i -> i > RSEM_THRESH,rsem[gene])))\t$(length(findall(i -> i >= READ_THRESH,counts[gene])))\tREADS\n")
+					continue
+				end
+	        end
+		end
     end
     run(`gzip -f "$out_path.txt"`)
 end
@@ -151,9 +159,9 @@ end
 
 function main()
     parsed_args = parseCommandline()
-    # expMatrix(parsed_args["expression"],parsed_args["out_name"])
+    expMatrix(parsed_args["expression"],parsed_args["out_name"])
     # normExpr(parsed_args["out_name"])
-    peerFactors(parsed_args["out_name"],parsed_args["pca"])
+    # peerFactors(parsed_args["out_name"],parsed_args["pca"])
 end
 
 main()
