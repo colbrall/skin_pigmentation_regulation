@@ -1,7 +1,7 @@
 argv <- commandArgs(trailingOnly = TRUE)
 # source("GTEx_Tissue_Wide_CV_elasticNet.R")
 # source("GTEx_Tissue_Wide_CV_elasticNet_debug.R")
-source("Zhang_melanocyte_CV_elasticNet.R")
+source("Zhang_melanocyte_CV_elasticNet_debug.R")
 
 study <- argv[1]
 expression_RDS <- argv[2]

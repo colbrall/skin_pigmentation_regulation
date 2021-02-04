@@ -20,16 +20,16 @@ from model_parameters_1240k_Zhang import *
 #     INTER_DIR + GENE_ANNOT_INTER2])
 
 # Process snp annotation-----------------------------------------------
-print("Splitting SNP annotation file up by chromosome...")
-subprocess.call(
-  ['../data_processing/split_snp_annot_by_chr.py',
-  SNP_ANN_DIR + SNP_ANNOTATION_FN,
-  INTER_DIR + SNP_ANN_INTER_DIR + SNP_ANN_INTER_PREFIX1
-  ])
-print("Saving each snp annotation file as RDS object")
-subprocess.call(
-  ['Rscript', '../data_processing/snp_annot_to_RDS.R',
-  INTER_DIR + SNP_ANN_INTER_DIR + SNP_ANN_INTER_PREFIX2])
+# print("Splitting SNP annotation file up by chromosome...")
+# subprocess.call(
+#   ['../data_processing/split_snp_annot_by_chr.py',
+#   SNP_ANN_DIR + SNP_ANNOTATION_FN,
+#   INTER_DIR + SNP_ANN_INTER_DIR + SNP_ANN_INTER_PREFIX1
+#   ])
+# print("Saving each snp annotation file as RDS object")
+# subprocess.call(
+#   ['Rscript', '../data_processing/snp_annot_to_RDS.R',
+#   INTER_DIR + SNP_ANN_INTER_DIR + SNP_ANN_INTER_PREFIX2])
 
 # Process genotype files-----------------------------------------------/
 # print("Splitting genotype files up by chromosome...")

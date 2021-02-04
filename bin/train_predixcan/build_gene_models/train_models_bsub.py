@@ -14,7 +14,8 @@ CMD = 'bsub -W 24:00 -M 22000 -e models_{0}_%J.error -o models_{0}_%J.out -J mod
 geno_prefixes = list(GENOTYPE_INTER_PREFIX)
 gene_annot = INTER_DIR + GENE_ANNOT_INTER2
 for i, study in enumerate(STUDY_NAMES):
-    for j in range(1,22):
+    # for j in range(1,23):
+    for j in range(15,16):
         expression_RDS = INTER_DIR + EXPRESSION_INTER_DIR + study + ".RDS"
         geno = INTER_DIR + GENOTYPE_INTER_DIR + geno_prefixes[0] + '.chr'
         snp_annot = INTER_DIR + SNP_ANN_INTER_DIR + SNP_ANN_INTER_PREFIX2

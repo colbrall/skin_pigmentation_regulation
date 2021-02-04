@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #make sure R >3.3 is available
-source activate R_peer
+# source activate R_peer
 
 chr=$1
 study=$2

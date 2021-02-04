@@ -6,7 +6,7 @@ allBetas=$2
 alpha=$3
 snpset=$4
 i=0
-for betafile in $(ls ../../../data/predixcan_models/zhang_1240k/model_by_chr/TW_${tissue}_elasticNet_alpha${alpha}_${snpset}_weights_chr*); do
+for betafile in $(ls ../../../data/predixcan_models/zhang_1240k_impute/model_by_chr/TW_${tissue}_elasticNet_alpha${alpha}_${snpset}_weights_chr*); do
 	if [ $i -eq 0 ] ; then
 		head -n 1 $betafile > $allBetas
 		i=1

@@ -56,12 +56,12 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
 
     # Pull cis-SNP genotypes
     # cisgenos <- data.frame(genotype[,intersect(colnames(genotype), cissnps$varID), drop = FALSE]) #join by varID
-    cisgenos <- data.frame(genotype[,intersect(colnames(genotype), cissnps$rsid), drop = FALSE]) #join by rsID
+    cisgenos <- data.frame(genotype[,intersect(colnames(genotype), cissnps$rsid), drop = FALSE],check.names = FALSE) #join by rsID
     # Reduce cisgenos to only include SNPs with at least 1 minor allele in dataset
     cm <- colMeans(cisgenos, na.rm = TRUE)
     minorsnps <- subset(colMeans(cisgenos), cm > 0 & cm < 2)
     minorsnps <- names(minorsnps)
-    cisgenos <- data.frame(cisgenos[,minorsnps, drop = FALSE])
+    cisgenos <- data.frame(cisgenos[,minorsnps, drop = FALSE],check.names = FALSE)
     if (ncol(cisgenos) < 2) { #only do this if there are _no_ SNPs nearby.
       # Need 2 or more cis-snps for glmnet.
       bestbetas <- data.frame()
@@ -104,7 +104,7 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
         # Position of best lambda in cv.glmnet output
         nrow.best <- best.lam[,3]
         # Get the betas from the best lambda value
-        ret <- as.data.frame(fit$glmnet.fit$beta[,nrow.best])
+        ret <- as.data.frame(fit$glmnet.fit$beta[,nrow.best],check.names = FALSE)
         ret[ret == 0.0] <- NA
         # Pull the non-zero betas from model
         as.vector(ret[which(!is.na(ret)),])
@@ -117,9 +117,11 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
         }
       )
     }
-    print(bestbetas)
+    # print(ret)
     if (length(bestbetas) > 0) {
       names(bestbetas) <- rownames(ret)[which(!is.na(ret))]
+      # print(bestbetas)
+      # print(names(bestbetas))
       # Pull out the predictions at the best lambda value.
       pred.mat <- fit$fit.preval[,nrow.best]
       res <- summary(lm(exppheno~pred.mat))
@@ -130,7 +132,9 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
       # Output best shrunken betas for PrediXcan
       bestbetalist <- names(bestbetas)
       bestbetainfo <- snp_annot[bestbetalist,]
+      # print(bestbetainfo)
       betatable <- as.matrix(cbind(bestbetainfo,bestbetas))
+      # print(betatable)
       write_covariance(gene, cisgenos, betatable[,"rsid"], betatable[,"varID"], covariance_out)
       # Output "gene", "rsid", "refAllele", "effectAllele", "beta"
       # For future: To change rsid to the chr_pos_ref_alt_build label, change "rsid" below to "varID".
@@ -150,6 +154,9 @@ TW_CV_model <- function(expression_RDS, geno_file, gene_annot_RDS, snp_annot_RDS
 
 write_covariance <- function(gene, cisgenos, model_rsids, model_varIDs, covariance_out) {
   # model_geno <- cisgenos[,model_varIDs, drop=FALSE]
+  # print("call")
+  # print(model_rsids)
+  # print(head(cisgenos))
   model_geno <- cisgenos[,model_rsids, drop=FALSE]
   geno_cov <- cov(model_geno)
   cov_df <- data.frame(gene=character(),rsid1=character(),rsid2=character(), covariance=double())

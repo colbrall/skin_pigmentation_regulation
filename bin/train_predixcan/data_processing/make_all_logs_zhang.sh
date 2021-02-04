@@ -4,7 +4,7 @@
 tissue=$1
 allLogs=$2
 i=0
-for logfile in $(ls ../../../data/predixcan_models/zhang_1240k/model_by_chr/${tissue}_chr*log.txt); do
+for logfile in $(ls ../../../data/predixcan_models/zhang_1240k_impute/model_by_chr/${tissue}_chr*log.txt); do
         if [ $i -eq 0 ] ; then
                 head -n 1 $logfile > $allLogs
                 i=1

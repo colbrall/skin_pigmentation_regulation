@@ -9,7 +9,7 @@ STUDY_NAMES = ['Zhang_melanocyte']
 GENE_ANNOTATION_FN = 'gencode.v19.annotation.gtf.gz'
 SNP_ANNOTATION_FN = '1240k_model_format.txt.gz'
 # List of genotype/expression file names:
-GENOTYPE_FNS = ['all_gts.vcf.gz']
+GENOTYPE_FNS = ['zhang_impute_all_gts.vcf.gz']
 COVARIATES_DIR = ""
 
 # Model metadata/parameters. Keep all as strings:
@@ -29,22 +29,21 @@ SNP_ANN_INTER_PREFIX1 = SNP_ANNOTATION_FN[:-7]
 # File name prefix for input files to snp_annot_to_RDS.R:
 SNP_ANN_INTER_PREFIX2 = SNP_ANN_INTER_PREFIX1 + '.chr'
 # File name prefixes for output files from split_genotype_by_chr.py:
-GENOTYPE_INTER_PREFIX = map(lambda x: x[:-7], GENOTYPE_FNS)
+GENOTYPE_INTER_PREFIX = list(map(lambda x: x[:-7], GENOTYPE_FNS))
 # File names for output files from expr_to_transposed_RDS.R:
 #EXPR_INTER = map(lambda x: x[:-3] + "RDS", EXPRESSION_RPKM)
 
-# Define directories---------------------------------------------------/
-INPUT_DIR = '/project/mathilab/colbranl/pigmentation/data/gtex_v8/'
+# Define directories---------------------------------------------------
 INTER_DIR = '/project/mathilab/colbranl/pigmentation/data/zhang_input/'
-OUTPUT_DIR = '/project/mathilab/colbranl/pigmentation/data/predixcan_models/zhang_1240k/'
+OUTPUT_DIR = '/project/mathilab/colbranl/pigmentation/data/predixcan_models/zhang_1240k_impute/'
 GENE_ANN_DIR = '/project/mathilab/colbranl/pigmentation/data/'
 SNP_ANN_DIR = '/project/mathilab/colbranl/pigmentation/data/snp_lists/'
 SNP_ANN_INTER_DIR = '1240k_snps_hg19/'
-GENOTYPE_INPUT_DIR = '/project/mathilab/colbranl/pigmentation/data/zhang_genotypes/'
+GENOTYPE_INPUT_DIR = '/project/mathilab/colbranl/pigmentation/data/zhang_genotypes/1kG_imputed/'
 EXPRESSION_INPUT_DIR = '/project/mathilab/colbranl/pigmentation/data/zhang_melanocyte_expression/corrected/'
-GENOTYPE_INTER_DIR = 'genotypes/'
+GENOTYPE_INTER_DIR = 'imputed_genotypes/'
 EXPRESSION_INTER_DIR = 'expression/'
-MODEL_BY_CHR_DIR = '/project/mathilab/colbranl/pigmentation/data/predixcan_models/zhang_1240k/model_by_chr/'
+MODEL_BY_CHR_DIR = '/project/mathilab/colbranl/pigmentation/data/predixcan_models/zhang_1240k_impute/model_by_chr/'
 HOME_DIR = os.path.dirname(os.path.realpath(__file__))
 ALL_BETAS_FILES = list(map(lambda x: OUTPUT_DIR + 'allBetas/' + x + '.allBetas.txt', STUDY_NAMES))
 ALL_COVARIANCES_FILES = list(map(lambda x: OUTPUT_DIR + 'allCovariances/' + x + '_' + SNPSET + '_alpha' + ALPHA + '_window' + WINDOW + '.txt', STUDY_NAMES))

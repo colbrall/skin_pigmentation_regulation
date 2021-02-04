@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # Python 2.7.4
 # modified by Laura Colbran to fix ref/alt bug Nov. 2017
 # modified by Laura Colbran to handle NA values in dosages July 2019
@@ -42,6 +42,7 @@ def buffered_file(file, dosage_buffer=None):
 def get_all_dosages(dosage_dir, dosage_prefix, dbuffer=None):
     for chrfile in [x for x in sorted(os.listdir(dosage_dir)) if x.startswith(dosage_prefix)]:
         print datetime.datetime.now(), "Processing %s" % chrfile
+#        print(join(dosage_dir, chrfile))
         for line in buffered_file(gzip.open(os.path.join(dosage_dir, chrfile)), dosage_buffer=dbuffer):
             if line.startswith('#'): continue
             #if line.contains(','): continue
