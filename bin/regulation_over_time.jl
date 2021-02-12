@@ -5,8 +5,8 @@
 
 using ArgParse
 using GZip, DataFrames, CSV
-using GLM
-using Seaborn
+using GLM, Distributions
+using Seaborn, StatsPlots
 
 # parses command-line arguments
 function parseCommandline()
@@ -51,6 +51,9 @@ function parseCommandline()
             help = "directory path to write output files"
             arg_type = String
             default = "./"
+		"--plot"
+			help = "if you want to plot the scatterplot and regression for each model"
+			action=:store_true
 	end
 	return parse_args(s)
 end
@@ -109,12 +112,13 @@ function pullModern(pop_path::Array{String,1},s_path::String,gene_ids::Array{Str
 	return preds
 end
 # calculates linear regression across time
-function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64,s_path::String,mod_pop::Array{String,1},mod_s::String,s_col::Int64,cov_cols::Array{Int64,1},out_path::String)
+function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64,s_path::String,mod_pop::Array{String,1},mod_s::String,s_col::Int64,cov_cols::Array{Int64,1},out_path::String,plot::Bool)
 	var = sampDF(s_path,s_col,cov_cols) # ends up with cols sample, date, [covs], [genes x tissue]
 	date_name = names(var)[2]
 	gene_ids = geneArray(gene_path,gene_col)
     indices = Dict{SubString,Array{Int64,1}}()
 	mod_preds = DataFrames.DataFrame("ind_id" => String[],"date"=>Int64[])
+	results = DataFrames.DataFrame("model"=> String[],"coeff" => Float64[],"stderr"=> Float64[],"t"=> Float64[],"pval"=>Float64[],"low95"=> Float64[],"up95"=> Float64[])
 	for tiss in pred_path
 		t_name = getTissue(tiss)
 		if mod_pop != ["None"] # add modern individuals to var if present
@@ -137,38 +141,55 @@ function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64
 	            if !in(l[1], gene_ids) continue end
 	            var[!,Symbol("$(l[1])_$t_name")] = parse.(Float64,l[indices])
 				#plot date vs pred. expression
-				s_plot = Seaborn.regplot(vcat(var[!,Symbol("$date_name")],mod_preds[!,:date]),
-							vcat(var[!,Symbol("$(l[1])_$t_name")],mod_preds[!,Symbol("$(l[1])_$t_name")]))
-                s_plot.set_title("$(l[1])_$t_name")
-                s_plot.set_ylabel("Pred. Norm. Expr.")
-				s_plot.set_xlabel("Age (yBP)")
-                Seaborn.savefig("$(out_path)$(l[1])_$(t_name)_time_series.pdf")
-                clf()
+				if plot
+					s_plot = Seaborn.regplot(vcat(var[!,Symbol("$date_name")],mod_preds[!,:date]),
+								vcat(var[!,Symbol("$(l[1])_$t_name")],mod_preds[!,Symbol("$(l[1])_$t_name")]))
+	                s_plot.set_title("$(l[1])_$t_name")
+	                s_plot.set_ylabel("Pred. Norm. Expr.")
+					s_plot.set_xlabel("Age (yBP)")
+	                Seaborn.savefig("$(out_path)$(l[1])_$(t_name)_time_series.pdf")
+	                clf()
+				end
 				if length(cov_cols) > 0
 					#fit regression with covariates as well as date
 					println("covariate regression not implemented yet")
 					exit()
 				else
-					tmp = DataFrames.DataFrame(:x => vcat(var[!,Symbol("$date_name")],mod_preds[!,:date]),
-							:y => vcat(var[!,Symbol("$(l[1])_$t_name")],mod_preds[!,Symbol("$(l[1])_$t_name")]))
+					if mod_pop != ["None"]
+						tmp = DataFrames.DataFrame(:x => vcat(var[!,Symbol("$date_name")],mod_preds[!,:date]),
+								:y => vcat(var[!,Symbol("$(l[1])_$t_name")],mod_preds[!,Symbol("$(l[1])_$t_name")]))
+					else
+						tmp = DataFrames.DataFrame(:x => var[!,Symbol("$date_name")],
+								:y => var[!,Symbol("$(l[1])_$t_name")])
+					end
 					fm = @eval @formula($(:y) ~ $(:x))
-					model = lm(fm,tmp)#fit regression
-					println("$(l[1])_$(t_name):")
-					println(model)
+					model = coeftable(lm(fm,tmp))#fit regression
+					push!(results,["$(l[1])_$(t_name):",model.cols[1][2],model.cols[2][2],model.cols[3][2],model.cols[4][2],model.cols[5][2],model.cols[6][2]])
 				end
 	        end
 	    end
 	end
+	CSV.write("$(out_path)regr_stats.txt",results;delim = "\t")
+	results[isnan.(results.pval), :pval] .= 1 #only happens if literally all the predictions are the exact same value (4 genes in melanocytes)
+	# qq = StatsPlots.qqplot(Uniform,results[!,:pval],xlabel="Expected",ylabel = "observed")
+	# StatsPlots.savefig("$(out_path)qqplot.pdf")
+	s_plot = Seaborn.hist(results[!,:pval],bins=100)
+	# s_plot.set_xlabel("P-Values")
+	Seaborn.savefig("$(out_path)pval_hist.pdf")
+	clf()
+	# println(first(results,6))
+	# sort!(results,[:pval])
+	# println(first(results,6))
+	# results[:exp_p] =
+
 end
 
 function main()
     parsed_args = parseCommandline()
 
-    # println("Parsed args:")
-    # for (arg,val) in parsed_args
-    #     println("  $arg  =>  $val")
-    # end
-    timeSeries(parsed_args["regulation"],parsed_args["genes"],parsed_args["column"],parsed_args["samples"],parsed_args["modern_pop"],parsed_args["modern_samples"],parsed_args["date_col"],parsed_args["covariates"],parsed_args["out_dir"])
+    timeSeries(parsed_args["regulation"],parsed_args["genes"],parsed_args["column"],
+			parsed_args["samples"],parsed_args["modern_pop"],parsed_args["modern_samples"],
+			parsed_args["date_col"],parsed_args["covariates"],parsed_args["out_dir"],parsed_args["plot"])
 end
 
 main()
