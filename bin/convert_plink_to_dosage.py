@@ -2,6 +2,7 @@
 # edited by Maya Johnson (2018) to no longer fill in dosage for missing genotypes as 2*MAF
 # edited by Laura Colbran (2019) to tab-delimit the dosage file
 # edited by Laura Colbran (2020) to fill in mean dosage for NA genotypes
+# edited by Laura Colbran (2021) to work with plink2
 
 import sys
 import os
@@ -58,7 +59,7 @@ if __name__ == "__main__":
   # Thanks to Adam Whiteside (https://github.com/adamcw) for
   # cleaning up this code to be more efficient
   diter = iter(x.split() for x in open(args.out + ".traw"))
-  fiter = iter(x.split() for x in open(args.out + ".frq"))
+  fiter = iter(x.split() for x in open(args.out + ".afreq"))
   biter = iter(x.split() for x in open(args.bfile + ".bim"))
 
   buff = defaultdict(list)
@@ -71,7 +72,9 @@ if __name__ == "__main__":
   for (dcols, fcols, bcols) in izip(diter, fiter, biter):
     # Combine columns as per 'dosage' format.
     # First we add the information columns for each rsID
-    bases = {'1':'A', '2':'C', '3':'G', '4':'T', '0':'.'}
+    bases = {'1':'A', '2':'C', '3':'G', '4':'T', '0':'.','A':'A','C':'C','G': 'G','T':'T'}
+    # print(fcols[3])
+    # print(fcols[0:2])
     nline = fcols[0:2] + [bcols[3]] + [bases[fcols[3]]] + [bases[fcols[2]]] + [fcols[4]]
 
     # Next add the (additive linear) dosage data for the samples.
@@ -100,6 +103,6 @@ if __name__ == "__main__":
       ofile.writelines(lines)
 
   # Remove left over files
-  os.remove(args.out + ".frq")
+  os.remove(args.out + ".afreq")
 #  os.remove(args.out + ".traw")
   os.remove(args.out + ".log")
