@@ -3,9 +3,11 @@
 # given a list of snps and populations, makes a plot of allele dosages in individuals
 # assumes you're giving SNPs on a specific chromosome
 # also just assumes you want the alternate allele dosage.
+# Julia 1.5. reqs R3.4 with pegas
 
 using ArgParse
 using Seaborn
+using RCall
 
 Seaborn.set(style="white", palette="muted")
 set_style(Dict("font.family" =>["DejaVu Sans"]))
@@ -14,37 +16,47 @@ set_style(Dict("font.family" =>["DejaVu Sans"]))
 RSID_COL = 2
 REF_COL = 4
 ALT_COL = 5
-FIRST_IND = 7
+FIRST_DOS_IND = 7
+FIRST_VCF_IND = 10
+POS_COL = 2
 
 function parseCommandLine()
     s = ArgParseSettings()
 
-    @add_arg_table s begin
-        "--pop_file","-f"
-            help = "path to dosage file containing populations. required."
-            arg_type = String
-        "--snps","-s"
-            help = "file with location and ids of SNPs to plot"
-            arg_type = String
-        "--target","-t"
-            help = "id for target SNP to sort by"
-            arg_type = String
-        "--pops","-p"
-            help = "file with individual -> population assignments"
-            arg_type = String
-        "--delim","-d"
-            help = "delimiter for dosage file"
-            arg_type = String
-            default = "\t"
+        @add_arg_table s begin
+            "--pop_file","-f"
+                help = "path to genotype file. required. expects dosage for heatmap and vcf for network."
+                arg_type = String
+                required = true
+            "--snps","-s"
+                help = "file with location and ids of SNPs to plot"
+                arg_type = String
+                required = true
+            "--target","-t"
+                help = "id for target SNP to sort by"
+                arg_type = String
+            "--pops","-p"
+                help = "file with individual -> population assignments"
+                arg_type = String
+            "--delim","-d"
+                help = "delimiter for pop_file"
+                arg_type = String
+                default = "\t"
+            "--heatmap","-m"
+                help = "to plot a heatmap of dosages in individuals"
+                action=:store_true
+            "--network","-n"
+                help = "to build a haplotype network"
+                action = :store_true
     end
     return parse_args(s)
 end
 
-function plotSNPs(snp_file::String,target_id::String,dos_path::String,pop_path,delim::String)
+function readSNPs(file::String)
     # read in target snps by coordinate
     snps = Array{Any,1}[] #[[loc,rsid,ref,alt]]
     chr = ""
-    open(snp_file) do f
+    open(file) do f
         for line in eachline(f)
             if startswith(line,"#") continue end
             l = split(chomp(line),"\t")
@@ -54,8 +66,38 @@ function plotSNPs(snp_file::String,target_id::String,dos_path::String,pop_path,d
     end
     # sort snps by location (bc it's first entry in arrays)
     sort!(snps)
+    return chr,snps
+end
+
+# grabs all variants in the range of target snp set, and writes them to a temporary file for pegas to read
+function writeLoci(min::Int64,max::Int64,fpath::String)
+    loci = Array{String,2}
+    N = 0
+    GZip.open(fpath) do inf
+        for line in readlines(inf)
+            if startswith(line,"##") continue end
+            if startswith(line,"#")
+                loci = vcat("inds",split(chomp(line),"\t")[FIRST_VCF_IND:end])
+                continue
+            end
+            line = split(chomp(line),"\t")
+            pos = parse(Int64,line[POS_COL])
+            if pos < min continue end
+            if pos > max break end #assumes vcf is sorted
+            loci = vcat(line[POS_COL],vcat([split(i,":")[1] for i in line[FIRST_VCF_IND:end]])) # add genotypes
+            N += 1
+        end
+    end
+    loci = transpose(loci)
+    CSV.write("loci.txt",  DataFrame(loci); writeheader=false,delim = "\t")
+    return N
+end
+
+# plots heatmap of dosages of SNPs of interest
+function plotSNPs(snp_file::String,target_id::String,dos_path::String,pop_path,delim::String)
+    chr,snps = readSNPs(snp_file)
     # build array of snps by dosage in individuals
-    inds = split(chomp(read(pipeline(`zcat $dos_path`,`head -1`),String)),delim)[FIRST_IND:end] #currently doesn't make sense if the first line isn't a header, but also doens't break
+    inds = split(chomp(read(pipeline(`zcat $dos_path`,`head -1`),String)),delim)[FIRST_DOS_IND:end] #currently doesn't make sense if the first line isn't a header, but also doens't break
     println("Num individuals: $(length(inds))")
     dosages = fill(0.0,length(inds),length(snps)) #allocate array of correct size
     targ_ind = 0
@@ -84,9 +126,32 @@ function plotSNPs(snp_file::String,target_id::String,dos_path::String,pop_path,d
     clf()
 end
 
+# plots haplotype network for SNPs of interest
+function hapNet(snp_file::String,vcf_path::String)
+    chr,snps = readSNPs(snp_file)
+    println(chr,snps)
+    nloci = writeLoci(snps[1][1],snps[end][1],vcf_path)
+    R'''
+        library(pegas)
+        regions = read.loci("loci.txt", loci.sep = "\t", col.loci = 2:(1+nloci), row.names = 1)
+        h <- pegas::haplotype(regions)
+        h <- sort(h, what = "label")
+        (net <- pegas::haploNet(h))
+        ind.hap<-with(stack(setNames(attr(h, "index"), rownames(h))),table(hap=ind, pop=rownames(regions)[values])) #(colours by frequencies, but want to colour by presence of coding snp vs high-weighted nc snp)
+        pdf("hap_network.pdf")
+        plot(net, size=attr(net, "freq"), scale.ratio=0.2, pie=ind.hap)
+        dev.off()
+    '''
+end
+
 function main()
     parsed_args = parseCommandLine()
-    plotSNPs(parsed_args["snps"],parsed_args["target"],parsed_args["pop_file"],parsed_args["pops"],parsed_args["delim"])
+    if parsed_args["heatmap"]
+        plotSNPs(parsed_args["snps"],parsed_args["target"],parsed_args["pop_file"],parsed_args["pops"],parsed_args["delim"])
+    end
+    if parsed_args["network"]
+        hapNet(parsed_args["snps"],parsed_args["pop_file"])
+    end
 end
 
 main()
