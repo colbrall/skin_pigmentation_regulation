@@ -3,14 +3,17 @@
 # given a list of snps and populations, makes a plot of allele dosages in individuals
 # assumes you're giving SNPs on a specific chromosome
 # also just assumes you want the alternate allele dosage.
-# Julia 1.5. reqs R3.4 with pegas
+# Julia 1.5. reqs R 4.0 with pegas installed
 
 using ArgParse
 using Seaborn
 using RCall
+using GZip,DataFrames,CSV
 
 Seaborn.set(style="white", palette="muted")
 set_style(Dict("font.family" =>["DejaVu Sans"]))
+
+SCRIPT_DIR = dirname(Base.source_path())
 
 # columns to parse dosage file
 RSID_COL = 2
@@ -84,11 +87,11 @@ function writeLoci(min::Int64,max::Int64,fpath::String)
             pos = parse(Int64,line[POS_COL])
             if pos < min continue end
             if pos > max break end #assumes vcf is sorted
-            loci = vcat(line[POS_COL],vcat([split(i,":")[1] for i in line[FIRST_VCF_IND:end]])) # add genotypes
+            loci =hcat(loci,vcat(line[POS_COL],vcat([split(i,":")[1] for i in line[FIRST_VCF_IND:end]]))) # add genotypes
             N += 1
         end
     end
-    loci = transpose(loci)
+    # println(loci)
     CSV.write("loci.txt",  DataFrame(loci); writeheader=false,delim = "\t")
     return N
 end
@@ -111,7 +114,7 @@ function plotSNPs(snp_file::String,target_id::String,dos_path::String,pop_path,d
             # println(line)
             snps[i][3] = line[REF_COL]
             snps[i][4] = line[ALT_COL]
-            dosages[:,i] .= [parse(Float64,x) for x in line[FIRST_IND:end]]
+            dosages[:,i] .= [parse(Float64,x) for x in line[FIRST_DOS_IND:end]]
             # exit()
         catch y
             println("$(snps[i][2]) missing from population. dosage set to 0 for all.")
@@ -129,19 +132,10 @@ end
 # plots haplotype network for SNPs of interest
 function hapNet(snp_file::String,vcf_path::String)
     chr,snps = readSNPs(snp_file)
-    println(chr,snps)
+    # println(chr,snps)
     nloci = writeLoci(snps[1][1],snps[end][1],vcf_path)
-    R'''
-        library(pegas)
-        regions = read.loci("loci.txt", loci.sep = "\t", col.loci = 2:(1+nloci), row.names = 1)
-        h <- pegas::haplotype(regions)
-        h <- sort(h, what = "label")
-        (net <- pegas::haploNet(h))
-        ind.hap<-with(stack(setNames(attr(h, "index"), rownames(h))),table(hap=ind, pop=rownames(regions)[values])) #(colours by frequencies, but want to colour by presence of coding snp vs high-weighted nc snp)
-        pdf("hap_network.pdf")
-        plot(net, size=attr(net, "freq"), scale.ratio=0.2, pie=ind.hap)
-        dev.off()
-    '''
+    # println(nloci)
+    run(`Rscript $(SCRIPT_DIR)/hap_network.R $nloci`)
 end
 
 function main()
