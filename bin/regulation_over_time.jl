@@ -147,7 +147,7 @@ function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64
 	                s_plot.set_title("$(l[1])_$t_name")
 	                s_plot.set_ylabel("Pred. Norm. Expr.")
 					s_plot.set_xlabel("Age (yBP)")
-	                Seaborn.savefig("$(out_path)$(l[1])_$(t_name)_time_series.pdf")
+	                Seaborn.savefig("$(out_path)$(l[1])_$(t_name)_time_series.png")
 	                clf()
 				end
 				if length(cov_cols) > 0
