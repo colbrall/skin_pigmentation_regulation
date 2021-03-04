@@ -3,11 +3,10 @@
 # given a list of snps and populations, makes a plot of allele dosages in individuals
 # assumes you're giving SNPs on a specific chromosome
 # also just assumes you want the alternate allele dosage.
-# Julia 1.5. reqs R 4.0 with pegas installed
+# Julia 1.5. reqs R 4.0 with pegas installed to call hap_network.R
 
 using ArgParse
 using Seaborn
-using RCall
 using GZip,DataFrames,CSV
 
 Seaborn.set(style="white", palette="muted")
@@ -51,6 +50,17 @@ function parseCommandLine()
             "--network","-n"
                 help = "to build a haplotype network"
                 action = :store_true
+            "--window"
+                help = "if pulling all SNPs in window. if not grab specific snps in --snps"
+                action = :store_true
+            "--targ_pop", "-r"
+                help = "list of individuals to include in hap plot"
+                default = ""
+                arg_type = String
+            "--ind_col", "-i"
+                help = "column in targ_pop file with the ids"
+                default = 1
+                arg_type = Int64
     end
     return parse_args(s)
 end
@@ -58,49 +68,105 @@ end
 function readSNPs(file::String)
     # read in target snps by coordinate
     snps = Array{Any,1}[] #[[loc,rsid,ref,alt]]
-    chr = ""
     open(file) do f
         for line in eachline(f)
             if startswith(line,"#") continue end
             l = split(chomp(line),"\t")
-            chr = l[1]
             snps = vcat(snps,[[parse(Int64,l[2]),l[6],l[4],l[5]]])
         end
     end
     # sort snps by location (bc it's first entry in arrays)
     sort!(snps)
-    return chr,snps
+    return snps
+end
+
+#return array of individuals to filter
+function readInds(path::String,col::Int64)
+    inds = String[]
+    open(path) do f
+        for line in eachline(f)
+            inds = vcat(inds,[split(chomp(line),"\t")[col]])
+        end
+    end
+    return inds
 end
 
 # grabs all variants in the range of target snp set, and writes them to a temporary file for pegas to read
-function writeLoci(min::Int64,max::Int64,fpath::String)
+function writeLociWindow(min::Int64,max::Int64,fpath::String,targpop::String,col::Int64)
     loci = Array{String,2}
     N = 0
+    indices = Int64[]
     GZip.open(fpath) do inf
         for line in readlines(inf)
             if startswith(line,"##") continue end
             if startswith(line,"#")
-                loci = vcat("inds",split(chomp(line),"\t")[FIRST_VCF_IND:end])
+                l = split(chomp(line),"\t")
+                # filter individuals if necessary
+                if targpop == ""
+                    indices = collect(FIRST_VCF_IND:length(l))
+                else
+                    targ = readInds(targpop,col)
+                    println(targ)
+                    indices = [findfirst(x->x==i,l) for i in targ]
+                end
+                println(indices)
+                loci = vcat("inds",l[indices])
                 continue
             end
             line = split(chomp(line),"\t")
             pos = parse(Int64,line[POS_COL])
             if pos < min continue end
             if pos > max break end #assumes vcf is sorted
-            loci =hcat(loci,vcat(line[POS_COL],vcat([split(i,":")[1] for i in line[FIRST_VCF_IND:end]]))) # add genotypes
+            loci =hcat(loci,vcat(line[POS_COL],vcat([split(split(i,":")[1],"/")[2] for i in line[indices]]))) # add genotypes
             N += 1
         end
     end
-    # println(loci)
     CSV.write("loci.txt",  DataFrame(loci); writeheader=false,delim = "\t")
+    println("Loci written...")
+    return N
+end
+
+# grabs all specific variants in target snp set, and writes them to a temporary file for pegas to read
+function writeLociSpec(snp_pos::Array{Int64,1},fpath::String,targpop::String,col::Int64)
+    println(snp_pos)
+    loci = Array{String,2}
+    N = 0
+    indices = Array{Int64,1}
+    GZip.open(fpath) do inf
+        for line in readlines(inf)
+            if startswith(line,"##") continue end
+            if startswith(line,"#")
+                l = split(chomp(line),"\t")
+                # filter individuals if necessary
+                if targpop == ""
+                    indices = collect(FIRST_VCF_IND:length(l))
+                else
+                    targ = readInds(targpop,col)
+                    indices = [findfirst(x->x==i,l) for i in targ]
+                end
+                loci = vcat("inds",l[indices])
+                continue
+            end
+            line = split(chomp(line),"\t")
+            pos = parse(Int64,line[POS_COL])
+            if pos in snp_pos
+                loci =hcat(loci,vcat(line[POS_COL],vcat([split(split(i,":")[1],"/")[2] for i in line[indices]]))) # add genotypes
+                N += 1
+            end
+        end
+    end
+    println(loci)
+    println(N)
+    CSV.write("loci.txt",  DataFrame(loci); writeheader=false,delim = "\t")
+    println("Loci written...")
     return N
 end
 
 # plots heatmap of dosages of SNPs of interest
 function plotSNPs(snp_file::String,target_id::String,dos_path::String,pop_path,delim::String)
-    chr,snps = readSNPs(snp_file)
+    snps = readSNPs(snp_file)
     # build array of snps by dosage in individuals
-    inds = split(chomp(read(pipeline(`zcat $dos_path`,`head -1`),String)),delim)[FIRST_DOS_IND:end] #currently doesn't make sense if the first line isn't a header, but also doens't break
+    inds = split(chomp(read(pipeline(`zcat $dos_path`,`head -1`),String)),delim)[FIRST_DOS_IND:end] #currently doesn't make sense if the first line isn't a header, but also doesn't break
     println("Num individuals: $(length(inds))")
     dosages = fill(0.0,length(inds),length(snps)) #allocate array of correct size
     targ_ind = 0
@@ -111,11 +177,9 @@ function plotSNPs(snp_file::String,target_id::String,dos_path::String,pop_path,d
         cmd = `zgrep "$(snps[i][2])" $dos_path`
         try
             line = split(chomp(read(cmd,String)),delim)
-            # println(line)
             snps[i][3] = line[REF_COL]
             snps[i][4] = line[ALT_COL]
             dosages[:,i] .= [parse(Float64,x) for x in line[FIRST_DOS_IND:end]]
-            # exit()
         catch y
             println("$(snps[i][2]) missing from population. dosage set to 0 for all.")
        end
@@ -130,11 +194,14 @@ function plotSNPs(snp_file::String,target_id::String,dos_path::String,pop_path,d
 end
 
 # plots haplotype network for SNPs of interest
-function hapNet(snp_file::String,vcf_path::String)
-    chr,snps = readSNPs(snp_file)
-    # println(chr,snps)
-    nloci = writeLoci(snps[1][1],snps[end][1],vcf_path)
-    # println(nloci)
+function hapNet(snp_file::String,vcf_path::String,window::Bool,targpop::String,ind_col::Int64)
+    snps = readSNPs(snp_file)
+    if window
+        nloci = writeLociWindow(snps[1][1],snps[end][1],vcf_path,targpop,ind_col)
+    else
+        nloci = writeLociSpec([entry[1] for entry in snps],vcf_path,targpop,ind_col)
+    end
+    exit()
     run(`Rscript $(SCRIPT_DIR)/hap_network.R $nloci`)
 end
 
@@ -144,7 +211,7 @@ function main()
         plotSNPs(parsed_args["snps"],parsed_args["target"],parsed_args["pop_file"],parsed_args["pops"],parsed_args["delim"])
     end
     if parsed_args["network"]
-        hapNet(parsed_args["snps"],parsed_args["pop_file"])
+        hapNet(parsed_args["snps"],parsed_args["pop_file"],parsed_args["window"],parsed_args["targ_pop"],parsed_args["ind_col"])
     end
 end
 
