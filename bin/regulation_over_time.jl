@@ -44,9 +44,13 @@ function parseCommandline()
 			arg_type=String
 			default="None"
 		"--covariates","-v"
-			help = "column(s) in sample file to regress out (e.g. PCs)"
-			nargs='*'
-			arg_type=Int64
+			help = "file with covariates to regress out (e.g. PCs). expects all individuals in one file."
+			arg_type=String
+			default="None"
+		"--cov_cols","-l"
+			help = "columns from covariates file to add. assumes first given is ind_id"
+			nargs = '*'
+			arg_type =Int64
 		"--out_dir", "-o"
             help = "directory path to write output files"
             arg_type = String
@@ -58,13 +62,9 @@ function parseCommandline()
 	return parse_args(s)
 end
 
-function sampDF(s_path::String,col::Int64,cov_cols::Array{Int64,1})
+function sampDF(s_path::String,col::Int64)
     df = CSV.read(s_path, DataFrame; delim='\t')
-	if length(cov_cols) > 0
-		return df[:,[1,col,cov_cols]]
-	else
-    	return df[:,[1,col]]
-	end
+	return df[:,[1,col]]
 end
 
 function geneArray(gene_path::String,gene_col::Int64)
@@ -112,12 +112,14 @@ function pullModern(pop_path::Array{String,1},s_path::String,gene_ids::Array{Str
 	return preds
 end
 # calculates linear regression across time
-function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64,s_path::String,mod_pop::Array{String,1},mod_s::String,s_col::Int64,cov_cols::Array{Int64,1},out_path::String,plot::Bool)
-	var = sampDF(s_path,s_col,cov_cols) # ends up with cols sample, date, [covs], [genes x tissue]
+function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64,s_path::String,mod_pop::Array{String,1},mod_s::String,s_col::Int64,covariates::String,cov_cols::Array{Int64,1},out_path::String,plot::Bool)
+	var = sampDF(s_path,s_col) # ends up with cols sample, date, [genes x tissue]
+	id_name = names(var)[1]
 	date_name = names(var)[2]
 	gene_ids = geneArray(gene_path,gene_col)
     indices = Dict{SubString,Array{Int64,1}}()
 	mod_preds = DataFrames.DataFrame("ind_id" => String[],"date"=>Int64[])
+	covs = DataFrames.DataFrame("ind_id" => String[])
 	results = DataFrames.DataFrame("model"=> String[],"coeff" => Float64[],"stderr"=> Float64[],"t"=> Float64[],"pval"=>Float64[],"low95"=> Float64[],"up95"=> Float64[])
 	for tiss in pred_path
 		t_name = getTissue(tiss)
@@ -131,6 +133,13 @@ function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64
 				mod_preds = pullModern(mod_pop,mod_s,gene_ids,tiss)
 			end
 		end
+		if covariates != "None"
+			# read in covariates file
+		    covs = CSV.read(covariates, DataFrame; delim='\t')[!,cov_cols]
+			new = ["ind_id"]
+			for i in 1:(ncol(covs)-1) push!(new,"cov$(i)") end
+			rename!(covs,new)
+		end
 	    GZip.open("$(tiss)") do f
 	        for line in eachline(f)
 	            l = split(chomp(line),'\t')
@@ -140,6 +149,26 @@ function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64
 	            end
 	            if !in(l[1], gene_ids) continue end
 	            var[!,Symbol("$(l[1])_$t_name")] = parse.(Float64,l[indices])
+				# calculate regression
+				if mod_pop != ["None"]
+					tmp = DataFrames.DataFrame(:ind_id => vcat(var[!,Symbol("$id_name")],mod_preds[!,:date]),
+							:expr => vcat(var[!,Symbol("$(l[1])_$t_name")],mod_preds[!,Symbol("$(l[1])_$t_name")]),
+							:date => vcat(var[!,Symbol("$date_name")],mod_preds[!,:date]))
+				else
+					tmp = DataFrames.DataFrame(:ind_id => vcat(var[!,Symbol("$id_name")],mod_preds[!,:date]),
+							:expr => var[!,Symbol("$(l[1])_$t_name")],
+							:date => var[!,Symbol("$date_name")])
+				end
+				if covariates != "None"
+					# join covariates to tmp
+					tmp = innerjoin(tmp,covs, on = :ind_id)
+				end
+				# println(names(tmp))
+				fm = @eval (Term(:expr) ~ sum(term.($(Symbol.(names(tmp)[3:end])))))
+				# println(fm)
+				model = coeftable(lm(fm,tmp))#fit regression
+				push!(results,["$(l[1])_$(t_name):",model.cols[1][2],model.cols[2][2],model.cols[3][2],model.cols[4][2],model.cols[5][2],model.cols[6][2]])
+				# println(results)
 				#plot date vs pred. expression
 				if plot
 					s_plot = Seaborn.regplot(vcat(var[!,Symbol("$date_name")],mod_preds[!,:date]),
@@ -147,24 +176,11 @@ function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64
 	                s_plot.set_title("$(l[1])_$t_name")
 	                s_plot.set_ylabel("Pred. Norm. Expr.")
 					s_plot.set_xlabel("Age (yBP)")
+					if covariates != "None"
+						# also plot calculated regression line
+					end
 	                Seaborn.savefig("$(out_path)$(l[1])_$(t_name)_time_series.png")
 	                clf()
-				end
-				if length(cov_cols) > 0
-					#fit regression with covariates as well as date
-					println("covariate regression not implemented yet")
-					exit()
-				else
-					if mod_pop != ["None"]
-						tmp = DataFrames.DataFrame(:x => vcat(var[!,Symbol("$date_name")],mod_preds[!,:date]),
-								:y => vcat(var[!,Symbol("$(l[1])_$t_name")],mod_preds[!,Symbol("$(l[1])_$t_name")]))
-					else
-						tmp = DataFrames.DataFrame(:x => var[!,Symbol("$date_name")],
-								:y => var[!,Symbol("$(l[1])_$t_name")])
-					end
-					fm = @eval @formula($(:y) ~ $(:x))
-					model = coeftable(lm(fm,tmp))#fit regression
-					push!(results,["$(l[1])_$(t_name):",model.cols[1][2],model.cols[2][2],model.cols[3][2],model.cols[4][2],model.cols[5][2],model.cols[6][2]])
 				end
 	        end
 	    end
@@ -189,7 +205,8 @@ function main()
 
     timeSeries(parsed_args["regulation"],parsed_args["genes"],parsed_args["column"],
 			parsed_args["samples"],parsed_args["modern_pop"],parsed_args["modern_samples"],
-			parsed_args["date_col"],parsed_args["covariates"],parsed_args["out_dir"],parsed_args["plot"])
+			parsed_args["date_col"],parsed_args["covariates"],parsed_args["cov_cols"],
+			parsed_args["out_dir"],parsed_args["plot"])
 end
 
 main()
