@@ -163,21 +163,22 @@ function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64
 					# join covariates to tmp
 					tmp = innerjoin(tmp,covs, on = :ind_id)
 				end
-				# println(names(tmp))
 				fm = @eval (Term(:expr) ~ sum(term.($(Symbol.(names(tmp)[3:end])))))
-				# println(fm)
 				model = coeftable(lm(fm,tmp))#fit regression
+				println(model)
 				push!(results,["$(l[1])_$(t_name):",model.cols[1][2],model.cols[2][2],model.cols[3][2],model.cols[4][2],model.cols[5][2],model.cols[6][2]])
-				# println(results)
 				#plot date vs pred. expression
 				if plot
-					s_plot = Seaborn.regplot(vcat(var[!,Symbol("$date_name")],mod_preds[!,:date]),
-								vcat(var[!,Symbol("$(l[1])_$t_name")],mod_preds[!,Symbol("$(l[1])_$t_name")]))
+					s_plot = Seaborn.regplot(x=vcat(var[!,Symbol("$date_name")],mod_preds[!,:date]),
+								y=vcat(var[!,Symbol("$(l[1])_$t_name")],mod_preds[!,Symbol("$(l[1])_$t_name")]))
 	                s_plot.set_title("$(l[1])_$t_name")
 	                s_plot.set_ylabel("Pred. Norm. Expr.")
 					s_plot.set_xlabel("Age (yBP)")
 					if covariates != "None"
 						# also plot calculated regression line
+					    x_vals = collect(s_plot.get_xlim())
+					    y_vals = x_vals .* model.cols[1][2] .+ model.cols[1][1]
+					    Seaborn.regplot(x=x_vals, y=y_vals,color = :red,scatter =:false)
 					end
 	                Seaborn.savefig("$(out_path)$(l[1])_$(t_name)_time_series.png")
 	                clf()
