@@ -37,6 +37,7 @@ function parseCommandLine()
             "--target","-t"
                 help = "id for target SNP to sort by"
                 arg_type = String
+                default = "none"
             "--pops","-p"
                 help = "file with individual -> population assignments"
                 arg_type = String
@@ -92,12 +93,13 @@ function readInds(path::String,col::Int64)
 end
 
 # grabs all variants in the range of target snp set, and writes them to a temporary file for pegas to read
-function writeLociWindow(min::Int64,max::Int64,fpath::String,targpop::String,col::Int64)
+function writeLociWindow(snps::Array{Array{Any,1},1},fpath::String,targpop::String,col::Int64)
+    min,max = snps[1][1],snps[end][1]
     loci = Array{String,2}
     N = 0
     indices = Int64[]
     GZip.open(fpath) do inf
-        for line in readlines(inf)
+        for line in eachline(inf)
             if startswith(line,"##") continue end
             if startswith(line,"#")
                 l = split(chomp(line),"\t")
@@ -106,10 +108,8 @@ function writeLociWindow(min::Int64,max::Int64,fpath::String,targpop::String,col
                     indices = collect(FIRST_VCF_IND:length(l))
                 else
                     targ = readInds(targpop,col)
-                    println(targ)
                     indices = [findfirst(x->x==i,l) for i in targ]
                 end
-                println(indices)
                 loci = vcat("inds",l[indices])
                 continue
             end
@@ -121,19 +121,21 @@ function writeLociWindow(min::Int64,max::Int64,fpath::String,targpop::String,col
             N += 1
         end
     end
+    println(loci[1:4,1:4])
+    println(size(loci))
     CSV.write("loci.txt",  DataFrame(loci); writeheader=false,delim = "\t")
     println("Loci written...")
     return N
 end
 
 # grabs all specific variants in target snp set, and writes them to a temporary file for pegas to read
-function writeLociSpec(snp_pos::Array{Int64,1},fpath::String,targpop::String,col::Int64)
-    println(snp_pos)
+function writeLociSpec(snps::Array{Array{Any,1},1},fpath::String,targpop::String,col::Int64)
+    snp_pos = [entry[1] for entry in snps]
     loci = Array{String,2}
     N = 0
     indices = Array{Int64,1}
     GZip.open(fpath) do inf
-        for line in readlines(inf)
+        for line in eachline(inf)
             if startswith(line,"##") continue end
             if startswith(line,"#")
                 l = split(chomp(line),"\t")
@@ -155,8 +157,6 @@ function writeLociSpec(snp_pos::Array{Int64,1},fpath::String,targpop::String,col
             end
         end
     end
-    println(loci)
-    println(N)
     CSV.write("loci.txt",  DataFrame(loci); writeheader=false,delim = "\t")
     println("Loci written...")
     return N
@@ -169,7 +169,7 @@ function plotSNPs(snp_file::String,target_id::String,dos_path::String,pop_path,d
     inds = split(chomp(read(pipeline(`zcat $dos_path`,`head -1`),String)),delim)[FIRST_DOS_IND:end] #currently doesn't make sense if the first line isn't a header, but also doesn't break
     println("Num individuals: $(length(inds))")
     dosages = fill(0.0,length(inds),length(snps)) #allocate array of correct size
-    targ_ind = 0
+    targ_ind = 1 #sorts by first if no target specified
     for i in 1:length(snps)
         if snps[i][2] == target_id
             targ_ind = i
@@ -194,15 +194,14 @@ function plotSNPs(snp_file::String,target_id::String,dos_path::String,pop_path,d
 end
 
 # plots haplotype network for SNPs of interest
-function hapNet(snp_file::String,vcf_path::String,window::Bool,targpop::String,ind_col::Int64)
+function hapNet(snp_file::String,vcf_path::String,target::String,window::Bool,targpop::String,ind_col::Int64)
     snps = readSNPs(snp_file)
     if window
-        nloci = writeLociWindow(snps[1][1],snps[end][1],vcf_path,targpop,ind_col)
+        nloci = writeLociWindow(snps,vcf_path,targpop,ind_col)
     else
-        nloci = writeLociSpec([entry[1] for entry in snps],vcf_path,targpop,ind_col)
+        nloci = writeLociSpec(snps,vcf_path,targpop,ind_col)
     end
-    exit()
-    run(`Rscript $(SCRIPT_DIR)/hap_network.R $nloci`)
+    run(`Rscript $(SCRIPT_DIR)/hap_network.R loci.txt $nloci $target`)
 end
 
 function main()
@@ -211,7 +210,7 @@ function main()
         plotSNPs(parsed_args["snps"],parsed_args["target"],parsed_args["pop_file"],parsed_args["pops"],parsed_args["delim"])
     end
     if parsed_args["network"]
-        hapNet(parsed_args["snps"],parsed_args["pop_file"],parsed_args["window"],parsed_args["targ_pop"],parsed_args["ind_col"])
+        hapNet(parsed_args["snps"],parsed_args["pop_file"],parsed_args["target"],parsed_args["window"],parsed_args["targ_pop"],parsed_args["ind_col"])
     end
 end
 
