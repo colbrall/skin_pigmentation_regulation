@@ -1,4 +1,4 @@
-# snp_plot.jl
+-# snp_plot.jl
 # @author Laura Colbran
 # given a list of snps and populations, makes a plot of allele dosages in individuals
 # assumes you're giving SNPs on a specific chromosome
@@ -62,6 +62,10 @@ function parseCommandLine()
                 help = "column in targ_pop file with the ids"
                 default = 1
                 arg_type = Int64
+            "--min_freq","-q"
+                help = "minimum MAF of SNP to include"
+                default = 0.0
+                arg_type = Float64
     end
     return parse_args(s)
 end
@@ -92,11 +96,21 @@ function readInds(path::String,col::Int64)
     return inds
 end
 
+function filterAF(loci::Array{AbstractString,2},min_freq::Float64)
+    snps_to_keep = Int64[1]
+    for i in 2:size(loci)[2]
+        freq = length(findall(x->isequal("0",x),loci[1:end,i]))/(size(loci)[1]-1)
+        if (1 - freq) >= min_freq
+            snps_to_keep = vcat(snps_to_keep,[i])
+        end
+    end
+    return loci[1:end,snps_to_keep]
+end
+
 # grabs all variants in the range of target snp set, and writes them to a temporary file for pegas to read
-function writeLociWindow(snps::Array{Array{Any,1},1},fpath::String,targpop::String,col::Int64)
+function writeLociWindow(snps::Array{Array{Any,1},1},fpath::String,targpop::String,col::Int64,min_freq::Float64)
     min,max = snps[1][1],snps[end][1]
     loci = Array{String,2}
-    N = 0
     indices = Int64[]
     GZip.open(fpath) do inf
         for line in eachline(inf)
@@ -118,21 +132,22 @@ function writeLociWindow(snps::Array{Array{Any,1},1},fpath::String,targpop::Stri
             if pos < min continue end
             if pos > max break end #assumes vcf is sorted
             loci =hcat(loci,vcat(line[POS_COL],vcat([split(split(i,":")[1],"/")[2] for i in line[indices]]))) # add genotypes
-            N += 1
         end
     end
-    println(loci[1:4,1:4])
+    println(size(loci))
+    if min_freq > 0
+        loci = filterAF(loci,min_freq)
+    end
     println(size(loci))
     CSV.write("loci.txt",  DataFrame(loci); writeheader=false,delim = "\t")
     println("Loci written...")
-    return N
+    return (size(loci)[2] -1)
 end
 
 # grabs all specific variants in target snp set, and writes them to a temporary file for pegas to read
 function writeLociSpec(snps::Array{Array{Any,1},1},fpath::String,targpop::String,col::Int64)
     snp_pos = [entry[1] for entry in snps]
     loci = Array{String,2}
-    N = 0
     indices = Array{Int64,1}
     GZip.open(fpath) do inf
         for line in eachline(inf)
@@ -152,14 +167,16 @@ function writeLociSpec(snps::Array{Array{Any,1},1},fpath::String,targpop::String
             line = split(chomp(line),"\t")
             pos = parse(Int64,line[POS_COL])
             if pos in snp_pos
+                println(pos)
                 loci =hcat(loci,vcat(line[POS_COL],vcat([split(split(i,":")[1],"/")[2] for i in line[indices]]))) # add genotypes
-                N += 1
             end
         end
     end
+    println(size(loci))
+    println(loci[1:6])
     CSV.write("loci.txt",  DataFrame(loci); writeheader=false,delim = "\t")
     println("Loci written...")
-    return N
+    return (size(loci)[2] -1)
 end
 
 # plots heatmap of dosages of SNPs of interest
@@ -194,14 +211,15 @@ function plotSNPs(snp_file::String,target_id::String,dos_path::String,pop_path,d
 end
 
 # plots haplotype network for SNPs of interest
-function hapNet(snp_file::String,vcf_path::String,target::String,window::Bool,targpop::String,ind_col::Int64)
+function hapNet(snp_file::String,vcf_path::String,target::String,window::Bool,targpop::String,ind_col::Int64,min_freq::Float64)
     snps = readSNPs(snp_file)
     if window
-        nloci = writeLociWindow(snps,vcf_path,targpop,ind_col)
+        nloci = writeLociWindow(snps,vcf_path,targpop,ind_col,min_freq)
     else
         nloci = writeLociSpec(snps,vcf_path,targpop,ind_col)
     end
-    run(`Rscript $(SCRIPT_DIR)/hap_network.R loci.txt $nloci $target`)
+    println("N Loci: $nloci")
+    # run(`Rscript $(SCRIPT_DIR)/hap_network.R loci.txt $nloci $target`)
 end
 
 function main()
@@ -210,7 +228,7 @@ function main()
         plotSNPs(parsed_args["snps"],parsed_args["target"],parsed_args["pop_file"],parsed_args["pops"],parsed_args["delim"])
     end
     if parsed_args["network"]
-        hapNet(parsed_args["snps"],parsed_args["pop_file"],parsed_args["target"],parsed_args["window"],parsed_args["targ_pop"],parsed_args["ind_col"])
+        hapNet(parsed_args["snps"],parsed_args["pop_file"],parsed_args["target"],parsed_args["window"],parsed_args["targ_pop"],parsed_args["ind_col"],parsed_args["min_freq"])
     end
 end
 
