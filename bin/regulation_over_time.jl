@@ -6,7 +6,7 @@
 using ArgParse
 using GZip, DataFrames, CSV
 using GLM, Distributions
-using Seaborn, StatsPlots
+using Seaborn, Plots
 
 # parses command-line arguments
 function parseCommandline()
@@ -165,18 +165,21 @@ function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64
 				end
 				fm = @eval (Term(:expr) ~ sum(term.($(Symbol.(names(tmp)[3:end])))))
 				model = coeftable(lm(fm,tmp))#fit regression
-				println(model)
+				# println(model)
 				push!(results,["$(l[1])_$(t_name):",model.cols[1][2],model.cols[2][2],model.cols[3][2],model.cols[4][2],model.cols[5][2],model.cols[6][2]])
 				#plot date vs pred. expression
 				if plot
 					s_plot = Seaborn.regplot(x=vcat(var[!,Symbol("$date_name")],mod_preds[!,:date]),
-								y=vcat(var[!,Symbol("$(l[1])_$t_name")],mod_preds[!,Symbol("$(l[1])_$t_name")]))
+								y=vcat(var[!,Symbol("$(l[1])_$t_name")],mod_preds[!,Symbol("$(l[1])_$t_name")]),
+								fit_reg=:false)
 	                s_plot.set_title("$(l[1])_$t_name")
 	                s_plot.set_ylabel("Pred. Norm. Expr.")
 					s_plot.set_xlabel("Age (yBP)")
 					if covariates != "None"
 						# also plot calculated regression line
-					    x_vals = collect(s_plot.get_xlim())
+						# println(s_plot.get_xlim())
+					    x_vals = collect(1:s_plot.get_xlim()[2])
+						# println(x_vals)
 					    y_vals = x_vals .* model.cols[1][2] .+ model.cols[1][1]
 					    Seaborn.regplot(x=x_vals, y=y_vals,color = :red,scatter =:false)
 					end
@@ -188,16 +191,20 @@ function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64
 	end
 	CSV.write("$(out_path)regr_stats.txt",results;delim = "\t")
 	results[isnan.(results.pval), :pval] .= 1 #only happens if literally all the predictions are the exact same value (4 genes in melanocytes)
-	# qq = StatsPlots.qqplot(Uniform,results[!,:pval],xlabel="Expected",ylabel = "observed")
-	# StatsPlots.savefig("$(out_path)qqplot.pdf")
-	s_plot = Seaborn.hist(results[!,:pval],bins=100)
+	sort!(results,:pval)
+	results[!,:exp] .= 1.0
+	for i in 1:nrow(results)
+		results[i,:exp] = -log(i/nrow(results))
+	end
+	x = [0,maximum(results[!,:exp])]
+	qq = Plots.plot(x,x,color = :grey,xlabel="-log(Expected P)",ylabel = "-log(observed P)")
+	qq = Plots.scatter!(results[!,:exp],-log.(results[!,:pval]),
+			legend = false,color = :black, alpha = 0.5)
+	Plots.savefig("$(out_path)qqplot.pdf")
+	# s_plot = Seaborn.hist(results[!,:pval],bins=100)
 	# s_plot.set_xlabel("P-Values")
-	Seaborn.savefig("$(out_path)pval_hist.pdf")
-	clf()
-	# println(first(results,6))
-	# sort!(results,[:pval])
-	# println(first(results,6))
-	# results[:exp_p] =
+	# Seaborn.savefig("$(out_path)pval_hist.pdf")
+	# clf()
 
 end
 
