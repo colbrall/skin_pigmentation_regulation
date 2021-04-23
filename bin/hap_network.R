@@ -7,7 +7,7 @@ regions = read.table(args[1],row.names=1,header = TRUE)
 
 regDNA <- as.DNAbin(ifelse(regions==1,"a", "t"))
 
-print(regDNA,details=TRUE)
+# print(regDNA,details=TRUE)
 h <- pegas::haplotype(regDNA)
 print(h)
 
