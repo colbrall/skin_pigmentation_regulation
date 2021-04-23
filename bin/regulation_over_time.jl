@@ -8,6 +8,17 @@ using GZip, DataFrames, CSV
 using GLM, Distributions
 using Seaborn, Plots
 
+SKIN_GENES = ["ENSG00000161091","ENSG00000167986","ENSG00000104044",
+"ENSG00000128731","ENSG00000188467","ENSG00000077498","ENSG00000107165",
+"ENSG00000164175","ENSG00000258839","ENSG00000101440","ENSG00000115138",
+"ENSG00000080166","ENSG00000049130","ENSG00000157404","ENSG00000137265",
+"ENSG00000176797","ENSG00000185664","ENSG00000162341","ENSG00000187098",
+"ENSG00000197535","ENSG00000047579","ENSG00000069974","ENSG00000088812",
+"ENSG00000143669","ENSG00000115648","ENSG00000166189","ENSG00000134160",
+"ENSG00000151694","ENSG00000173157","ENSG00000146648","ENSG00000145244",
+"ENSG00000112038","ENSG00000157168","ENSG00000173068","ENSG00000040531",
+"ENSG00000136160","ENSG00000124205"]
+
 # parses command-line arguments
 function parseCommandline()
 	s = ArgParseSettings()
@@ -165,12 +176,12 @@ function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64
 				end
 				fm = @eval (Term(:expr) ~ sum(term.($(Symbol.(names(tmp)[3:end])))))
 				model = coeftable(lm(fm,tmp))#fit regression
-				println(nrow(tmp))
 				tmp = tmp[tmp[:,:date] .< 15000,:]
-				println(nrow(tmp))
 				model_15ky = coeftable(lm(fm,tmp))#fit regression
 				# println(model)
-				push!(results,["$(l[1])_$(t_name):",model.cols[1][2],model.cols[2][2],model.cols[3][2],model.cols[4][2],model.cols[5][2],model.cols[6][2]])
+				# push!(results,["$(l[1])_$(t_name):",model.cols[1][2],model.cols[2][2],model.cols[3][2],model.cols[4][2],model.cols[5][2],model.cols[6][2]])
+				push!(results,["$(l[1])",model.cols[1][2],model.cols[2][2],model.cols[3][2],model.cols[4][2],model.cols[5][2],model.cols[6][2]])
+
 				#plot date vs pred. expression
 				if plot
 					s_plot = Seaborn.regplot(x=vcat(var[!,Symbol("$date_name")],mod_preds[!,:date]),
@@ -181,32 +192,18 @@ function timeSeries(pred_path::Array{String,1},gene_path::String,gene_col::Int64
 					s_plot.set_xlabel("Age (yBP)")
 
 					x_vals = collect(1:s_plot.get_xlim()[2])
+					x_vals_15k = collect(1:15000)
 				    y_vals = x_vals .* model.cols[1][2] .+ model.cols[1][1]
-					y_vals_15ky = x_vals .* model_15ky.cols[1][2] .+ model_15ky.cols[1][1]
-					Seaborn.regplot(x=x_vals,y=y_vals_15ky,color=:black,scatter = :false)
+					y_vals_15ky = x_vals_15k .* model_15ky.cols[1][2] .+ model_15ky.cols[1][1]
+					Seaborn.regplot(x=x_vals_15k,y=y_vals_15ky,color=:black,scatter = :false)
 				    Seaborn.regplot(x=x_vals, y=y_vals,color = :red,scatter =:false)
-	                Seaborn.savefig("$(out_path)$(l[1])_$(t_name)_time_series.png")
+	                Seaborn.savefig("$(out_path)$(l[1])_$(t_name)_time_series.png") #N.B. on ancient EUR pdf has so many oints inkscape won't open it
 	                clf()
 				end
 	        end
 	    end
 	end
-	CSV.write("$(out_path)regr_stats.txt",results;delim = "\t")
-	results[isnan.(results.pval), :pval] .= 1 #only happens if literally all the predictions are the exact same value (4 genes in melanocytes)
-	sort!(results,:pval)
-	results[!,:exp] .= 1.0
-	for i in 1:nrow(results)
-		results[i,:exp] = -log(i/nrow(results))
-	end
-	x = [0,maximum(results[!,:exp])]
-	qq = Plots.plot(x,x,color = :grey,xlabel="-log(Expected P)",ylabel = "-log(observed P)")
-	qq = Plots.scatter!(results[!,:exp],-log.(results[!,:pval]),
-			legend = false,color = :black, alpha = 0.5)
-	Plots.savefig("$(out_path)qqplot.pdf")
-	# s_plot = Seaborn.hist(results[!,:pval],bins=100)
-	# s_plot.set_xlabel("P-Values")
-	# Seaborn.savefig("$(out_path)pval_hist.pdf")
-	# clf()
+	CSV.write("$(out_path)regr_stats.txt",results;delim = "\t") #qqplot can be made from this output using qqplot.jl
 
 end
 
