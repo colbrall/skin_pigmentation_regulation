@@ -128,10 +128,6 @@ function sampDict(s_path::String,groups::Array{String,1},col::Int64)
     if length(groups) != 1
         delete!(dict,"others")
     end
-    for g in keys(dict)
-        println("$g: $(length(dict[g]))")
-    end
-    println("")
     return dict
 end
 
@@ -143,8 +139,13 @@ end
 function pullInds(d::Dict{SubString,Array{SubString,1}},l::Array{SubString{String},1})
     dict = Dict{SubString,Array{Int64,1}}()
     for g in keys(d)
-        dict[g] = [findfirst(x->x==i,l) for i in d[g]]
+        tmp = [findfirst(x->x==i,l) for i in d[g]]
+        dict[g] = tmp[tmp .!= nothing] #account for there being samples in group that aren't in predictions
     end
+    for g in keys(dict)
+        println("$g: $(length(dict[g]))")
+    end
+    println("")
     return dict
 end
 
@@ -254,7 +255,7 @@ function grpComp(pop_path::String,samp_path::String,group_names::Array{String,1}
         GZip.open("$(pop_path)$file") do f
             gene_res = DataFrames.DataFrame(gene=String[],tiss=String[],p=Float64[])
             for g in keys(groups)
-                gene_res[Symbol("$(g)_med")] = Float64[]
+                gene_res[!,Symbol("$(g)_med")] = Float64[]
             end
             for line in eachline(f)
                 l = split(chomp(line),'\t')
@@ -281,13 +282,13 @@ function grpComp(pop_path::String,samp_path::String,group_names::Array{String,1}
         thresh = 0.0
         if correct == "bonferroni"
             thresh = bonferroni(nrow(gene_res))
-            gene_res[:bonf_pass] = false
+            gene_res[!,:bonf_pass] .= false
         elseif correct == "fdr"
-            thresh = FDR(gene_res[:p])
-            gene_res[:fdr_pass] = false
+            thresh = FDR(gene_res[:,:p])
+            gene_res[!,:fdr_pass] .= false
         else
             thresh = 0.05
-            gene_res[:uncorr_pass] = false
+            gene_res[!,:uncorr_pass] .= false
         end
         for row in 1:nrow(gene_res)
             if gene_res[row,:p] < thresh
@@ -345,11 +346,11 @@ function plotSwarm(pop_path::String,samp_path::String,mod_path::String,mod_list:
                     gene_res[!,Symbol(l[1])] = [parse(Float64,i) for i in l[2:end]]
                 end
                 # println(first(gene_res,6))
-                #CSV.write("$(l[1])_$(join(group_names,'_')).txt",gene_res[[in(i,group_names) for i in gene_res[:groups]],:];delim='\t')
-                s_plot = Seaborn.boxplot(gene_res[[in(i,group_names) for i in gene_res[!,:groups]],:groups],
-                                gene_res[[in(i,group_names) for i in gene_res[!,:groups]],Symbol(l[1])])
-                s_plot = swarmplot(gene_res[[in(i,group_names) for i in gene_res[!,:groups]],:groups],
-                                gene_res[[in(i,group_names) for i in gene_res[!,:groups]],Symbol(l[1])],color=:black,alpha=0.5)
+                # CSV.write("$(l[1])_$(join(group_names,'_')).txt",gene_res[[in(i,group_names) for i in gene_res[!,:groups]],:];delim='\t')
+                s_plot = Seaborn.boxplot(x=gene_res[[in(i,group_names) for i in gene_res[!,:groups]],:groups],
+                                y=gene_res[[in(i,group_names) for i in gene_res[!,:groups]],Symbol(l[1])])
+                s_plot = swarmplot(x=gene_res[[in(i,group_names) for i in gene_res[!,:groups]],:groups],
+                                y=gene_res[[in(i,group_names) for i in gene_res[!,:groups]],Symbol(l[1])],color=:black,alpha=0.5,size=2)
                 s_plot.set_title("$(l[1])")
                 s_plot.set_ylabel("Pred. Norm. Expr.")
                 Seaborn.savefig("$(l[1])_$(join(group_names,'_')).pdf")
@@ -358,34 +359,6 @@ function plotSwarm(pop_path::String,samp_path::String,mod_path::String,mod_list:
         end
     else
         println("not implemented yet-- please specify tissue")
-        #plot all tiss
-    end
-end
-
-function plotTrend(pop_path::String,samp_path::String,col::Int64,out_path::String,gene_ids::Array{String,1})
-    var = sampDF(samp_path,col)
-    if isfile(pop_path)
-        indices = Dict{SubString,Array{Int64,1}}()
-        GZip.open("$(pop_path)") do f
-            for line in eachline(f)
-                l = split(chomp(line),'\t')
-                if startswith(line,"gene")
-                    indices = [findfirst(x->x==i,l) for i in var[:,1]]
-                    continue
-                end
-                if !in(l[1], gene_ids) continue end
-                var[Symbol(l[1])] = parse.(Float64,l[indices])
-                s_plot = Plots.scatter(var[:,2],var[Symbol(l[1])],xlabel="$(names(var)[2])",ylabel="Pred. Expr.",title ="$(l[1])",margin=10Plots.mm)
-                Plots.savefig(s_plot,"$(l[1])_$(names(var)[2]).pdf")
-                pcorr = cor(var[:,2],var[Symbol(l[1])])
-                println("Pearson correlation = $pcorr (P = $(pvalue(OneSampleZTest(atanh(pcorr), 1, nrow(var)))))")
-
-                scorr = corspearman(var[:,2],var[Symbol(l[1])])
-                println("Spearman correlation = $scorr (P = $(pvalue(OneSampleZTest(atanh(scorr), 1, nrow(var)))))")
-            end
-        end
-    else
-        println("multi tissue plotting not implemented yet-- please specify tissue")
         #plot all tiss
     end
 end
@@ -459,8 +432,6 @@ function main()
     parsed_args = parseCommandLine()
     if parsed_args["plot"] && length(parsed_args["groups"]) != 0
         plotSwarm(parsed_args["pop_dir"],parsed_args["sample_list"],parsed_args["mod_pop"],parsed_args["mod_list"],parsed_args["groups"],parsed_args["column"],(parsed_args["out_dir"]),parsed_args["genes"])
-    elseif parsed_args["plot"] && length(parsed_args["groups"]) == 0
-        plotTrend(parsed_args["pop_dir"],parsed_args["sample_list"],parsed_args["column"],(parsed_args["out_dir"]),parsed_args["genes"])
     elseif parsed_args["dist"]
         diffDist(parsed_args["pop_dir"],parsed_args["sample_list"],parsed_args["groups"],parsed_args["column"],(parsed_args["out_dir"]),parsed_args["diff"])
     elseif length(parsed_args["groups"]) == 0
