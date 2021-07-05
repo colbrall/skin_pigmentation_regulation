@@ -4,7 +4,7 @@ manuscript here: [biorxiv link here]
 
 bin/
   PrediXcan.py
-    script to predict gene regulation. requires dosage files and a sqlite db of PrediXcan models
+    script to predict gene regulation. requires dosage files and a sqlite db of PrediXcan models. adapted from script here: https://github.com/hakyimlab/PrediXcan/tree/master/Software
   compare_by_group.jl
     functions for statistical and plotting comparisons of groups of individuals. used for box plots in Fig. 5C&D.
   convert_genotypes.jl
@@ -42,6 +42,14 @@ bin/
         
     data_processing/
       contains scripts called by the processing and training scripts in build_gene_models/
-data/
 
-results/
+
+predictions/
+    all_regr_stats_anccorr.txt
+        regression results from regulation_over_time.jl for all Melanocyte models in all ancient Europeans.
+    skin_regr_stats_anccorr.txt
+        regression results for just the skin pigmentation genes focused on in the study
+    Zhang_melanocyte_1240k_alpha0.5_window1e6.db
+        SQLite db with all Melanocyte gene regulation models used in the study.
+
+**We're working on sharing the raw predictions as well, but until we sort that out, please contact me for those results
