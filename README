@@ -21,6 +21,8 @@ bin/
     plots and calculates summary statistics for PrediXcan models
   predixcan_search.jl
     searches predixcan model database(s) for a gene model and returns SNP count and r2
+  qqplot.jl
+    given a set of p-values, plots a qqplot, optionally after GC-correction. Used for Fig. 5A
   regulation_over_time.jl
     calculates a linear regression for predicted regulation over time and plots the output. used for plots and statistics in Fig. 5B
   snp_plot.jl
