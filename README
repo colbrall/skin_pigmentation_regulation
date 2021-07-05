@@ -1,9 +1,47 @@
 @author Laura Colbran
 scripts, data, results for skin pigmentation/gene regulation project
+manuscript here: [biorxiv link here]
 
 bin/
-  training and analysis scripts
-
+  PrediXcan.py
+    script to predict gene regulation. requires dosage files and a sqlite db of PrediXcan models
+  compare_by_group.jl
+    functions for statistical and plotting comparisons of groups of individuals. used for box plots in Fig. 5C&D.
+  convert_genotypes.jl
+    converts melanocyte genotype data from illumina to plink format, with some QC
+  convert_plink_to_dosage.py
+    converts plink genotype files to dosage as used for PrediXcan
+  expression_covariates.jl
+    converts melanocyte expression data to PrediXcan format, and calculates PEER factors to use as covariates
+  hap_network.R
+    plots a haplotype network. called by snp_plot.jl
+  locus_zoom.jl
+    plots a fairly ugly version of a locuszoom plot, given the SNPs and statistic to plot
+  model_comparison.jl
+    plots and calculates summary statistics for PrediXcan models
+  predixcan_search.jl
+    searches predixcan model database(s) for a gene model and returns SNP count and r2
+  regulation_over_time.jl
+    calculates a linear regression for predicted regulation over time and plots the output. used for plots and statistics in Fig. 5B
+  snp_plot.jl
+    plots AF-related plots for a set of snps. calls hap_network.R.
+  transpose_pred_output.jl
+    transposes raw prediXcan output into gene x ind matrix. needed for a lot of the scripts that were already written.
+    
+  train_predixcan/
+    build_gene_models/
+      contains top-level scripts used to train PrediXcan models. For models discussed in the paper:
+      Zhang_melanocyte_CV_elasticNet.R
+        Organizes and trains models on Zhang melanocyte data
+      preprocess_zhang.py
+        processes Zhang melanocyte data into input for the elasticNet script
+      post_process_zhang.py
+        processes raw training output into a SQLite db      
+      model_parameters_1240k_Zhang.py 
+        contains paths and parameters used by the data processing and training scripts
+        
+    data_processing/
+      contains scripts called by the processing and training scripts in build_gene_models/
 data/
 
 results/
