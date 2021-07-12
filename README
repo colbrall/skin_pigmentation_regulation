@@ -1,6 +1,6 @@
 @author Laura Colbran
 scripts, data, results for skin pigmentation/gene regulation project
-manuscript here: [biorxiv link here]
+project write-up on BioRxiv: https://doi.org/10.1101/2021.07.05.451164 
 
 bin/
   PrediXcan.py
